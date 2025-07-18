@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SimpleTokenSender DApp</title>
+<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 10px;}
+  input, button { margin: 5px 0; padding: 6px; width: 100%; }
+  table { width: 100%; border-collapse: collapse; margin-top: 15px;}
+  th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
+  th { background: #eee; }
+</style>
+</head>
+<body>
+
+<h1>SimpleTokenSender DApp</h1>
+<button id="connectBtn">连接钱包</button>
+<p id="account"></p>
+
+<h2>合约状态</h2>
+<p>最大Gas每交易对: <span id="maxGasPerPair">-</span></p>
+<p>最大Gas价格(Gwei): <span id="maxGasPrice">-</span></p>
+<p>自动转账开关: <span id="autoTransferEnabled">-</span></p>
+<p>上次转账时间: <span id="lastGlobalTransferTime">-</span></p>
+
+<h2>交易对列表</h2>
+<table id="pairsTable">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>名称</th>
+      <th>Token地址</th>
+      <th>接收地址</th>
+      <th>激活</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<h3>添加交易对</h3>
+<input id="inputToken" placeholder="Token合约地址" />
+<input id="inputReceiver" placeholder="接收者地址" />
+<input id="inputName" placeholder="交易对名称" />
+<button id="addPairBtn">添加交易对</button>
+
+<h3>修改设置</h3>
+<input id="inputMaxGasPerPair" placeholder="最大Gas每交易对（数字）" />
+<button id="setMaxGasBtn">设置最大Gas每交易对</button>
+
+<input id="inputMaxGasPrice" placeholder="最大Gas价格(Gwei)" />
+<button id="setMaxGasPriceBtn">设置最大Gas价格</button>
+
+<button id="toggleAutoTransferBtn">切换自动转账开关</button>
+
+<h3>操作</h3>
+<button id="executeTransfersBtn">执行转账</button>
+
+<script>
+  const contractAddress = "0x58753f500A22420784f277439b358e3d6cb44AFa";
+  const contractABI = [
+    "function maxGasPerPair() view returns (uint256)",
+    "function maxGasPrice() view returns (uint256)",
+    "function autoTransferEnabled() view returns (bool)",
+    "function lastGlobalTransferTime() view returns (uint256)",
+    "function getAllPairs() view returns (tuple(address token, address receiver, bool isActive, string name)[])",
+    "function addPair(address token, address receiver, string calldata name)",
+    "function togglePair(uint256 index, bool isActive)",
+    "function toggleAutoTransfer(bool enabled)",
+    "function setMaxGasPerPair(uint256 newMaxGas)",
+    "function setMaxGasPrice(uint256 newMaxGasPrice)",
+    "function executeTransfers()"
+  ];
+
+  let provider;
+  let signer;
+  let contract;
+  let account;
+
+  const connectBtn = document.getElementById("connectBtn");
+  const accountP = document.getElementById("account");
+  const maxGasPerPairSpan = document.getElementById("maxGasPerPair");
+  const maxGasPriceSpan = document.getElementById("maxGasPrice");
+  const autoTransferEnabledSpan = document.getElementById("autoTransferEnabled");
+  const lastGlobalTransferTimeSpan = document.getElementById("lastGlobalTransferTime");
+  const pairsTableBody = document.querySelector("#pairsTable tbody");
+
+  const inputToken = document.getElementById("inputToken");
+  const inputReceiver = document.getElementById("inputReceiver");
+  const inputName = document.getElementById("inputName");
+  const addPairBtn = document.getElementById("addPairBtn");
+
+  const inputMaxGasPerPair = document.getElementById("inputMaxGasPerPair");
+  const setMaxGasBtn = document.getElementById("setMaxGasBtn");
+
+  const inputMaxGasPrice = document.getElementById("inputMaxGasPrice");
+  const setMaxGasPriceBtn = document.getElementById("setMaxGasPriceBtn");
+
+  const toggleAutoTransferBtn = document.getElementById("toggleAutoTransferBtn");
+  const executeTransfersBtn = document.getElementById("executeTransfersBtn");
+
+  async function connectWallet() {
+    if (!window.ethereum) {
+      alert("请安装MetaMask或者其他兼容钱包！");
+      return;
+    }
+    provider = new ethers.providers.Web3Provider(window.ethereum);
+    await provider.send("eth_requestAccounts", []);
+    signer = provider.getSigner();
+    account = await signer.getAddress();
+    accountP.textContent = "当前账户: " + account;
+    contract = new ethers.Contract(contractAddress, contractABI, signer);
+    connectBtn.disabled = true;
+    loadContractData();
+  }
+
+  async function loadContractData() {
+    if (!contract) return;
+
+    try {
+      const [
+        gasPerPair,
+        gasPrice,
+        autoEnabled,
+        lastTime,
+        pairs,
+      ] = await Promise.all([
+        contract.maxGasPerPair(),
+        contract.maxGasPrice(),
+        contract.autoTransferEnabled(),
+        contract.lastGlobalTransferTime(),
+        contract.getAllPairs(),
+      ]);
+      maxGasPerPairSpan.textContent = gasPerPair.toString();
+      maxGasPriceSpan.textContent = ethers.utils.formatUnits(gasPrice, "gwei");
+      autoTransferEnabledSpan.textContent = autoEnabled ? "开启" : "关闭";
+      if (lastTime.toNumber() === 0) {
+        lastGlobalTransferTimeSpan.textContent = "无";
+      } else {
+        const date = new Date(lastTime.toNumber() * 1000);
+        lastGlobalTransferTimeSpan.textContent = date.toLocaleString();
+      }
+
+      pairsTableBody.innerHTML = "";
+      pairs.forEach((p, i) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${i}</td>
+          <td>${p.name}</td>
+          <td><a href="https://etherscan.io/token/${p.token}" target="_blank" rel="noopener noreferrer">${p.token}</a></td>
+          <td><a href="https://etherscan.io/address/${p.receiver}" target="_blank" rel="noopener noreferrer">${p.receiver}</a></td>
+          <td>${p.isActive ? "是" : "否"}</td>
+          <td><button data-index="${i}" class="togglePairBtn">${p.isActive ? "关闭" : "开启"}</button></td>
+        `;
+        pairsTableBody.appendChild(tr);
+      });
+
+      // 给所有切换按钮绑定事件
+      document.querySelectorAll(".togglePairBtn").forEach(btn => {
+        btn.onclick = async () => {
+          const idx = btn.getAttribute("data-index");
+          const pair = pairs[Number(idx)];
+          if (!pair) return alert("交易对不存在");
+          try {
+            btn.disabled = true;
+            await contract.togglePair(idx, !pair.isActive);
+            alert("切换成功");
+            loadContractData();
+          } catch(e) {
+            alert("切换失败: " + (e.data?.message || e.message));
+          } finally {
+            btn.disabled = false;
+          }
+        };
+      });
+
+    } catch (e) {
+      alert("读取合约数据失败: " + (e.data?.message || e.message));
+      console.error(e);
+    }
+  }
+
+  addPairBtn.onclick = async () => {
+    if (!contract) return alert("请先连接钱包");
+    const token = inputToken.value.trim();
+    const receiver = inputReceiver.value.trim();
+    const name = inputName.value.trim();
+    if (!ethers.utils.isAddress(token)) return alert("请输入有效Token地址");
+    if (!ethers.utils.isAddress(receiver)) return alert("请输入有效接收者地址");
+    if (!name) return alert("请输入交易对名称");
+    try {
+      addPairBtn.disabled = true;
+      const tx = await contract.addPair(token, receiver, name);
+      await tx.wait();
+      alert("添加成功");
+      inputToken.value = "";
+      inputReceiver.value = "";
+      inputName.value = "";
+      loadContractData();
+    } catch (e) {
+      alert("添加失败: " + (e.data?.message || e.message));
+    } finally {
+      addPairBtn.disabled = false;
+    }
+  };
+
+  setMaxGasBtn.onclick = async () => {
+    if (!contract) return alert("请先连接钱包");
+    const val = inputMaxGasPerPair.value.trim();
+    const num = parseInt(val);
+    if (isNaN(num) || num <= 0) return alert("请输入有效数字");
+    try {
+      setMaxGasBtn.disabled = true;
+      const tx = await contract.setMaxGasPerPair(num);
+      await tx.wait();
+      alert("设置成功");
+      loadContractData();
+    } catch (e) {
+      alert("设置失败: " + (e.data?.message || e.message));
+    } finally {
+      setMaxGasBtn.disabled = false;
+    }
+  };
+
+  setMaxGasPriceBtn.onclick = async () => {
+    if (!contract) return alert("请先连接钱包");
+    const val = inputMaxGasPrice.value.trim();
+    if (!val || isNaN(Number(val))) return alert("请输入有效数字");
+    try {
+      setMaxGasPriceBtn.disabled = true;
+      // 转 gwei 转 wei
+      const weiVal = ethers.utils.parseUnits(val, "gwei");
+      const tx = await contract.setMaxGasPrice(weiVal);
+      await tx.wait();
+      alert("设置成功");
+      loadContractData();
+    } catch (e) {
+      alert("设置失败: " + (e.data?.message || e.message));
+    } finally {
+      setMaxGasPriceBtn.disabled = false;
+    }
+  };
+
+  toggleAutoTransferBtn.onclick = async () => {
+    if (!contract) return alert("请先连接钱包");
+    try {
+      toggleAutoTransferBtn.disabled = true;
+      const current = autoTransferEnabledSpan.textContent === "开启";
+      const tx = await contract.toggleAutoTransfer(!current);
+      await tx.wait();
+      alert("切换成功");
+      loadContractData();
+    } catch (e) {
+      alert("切换失败: " + (e.data?.message || e.message));
+    } finally {
+      toggleAutoTransferBtn.disabled = false;
+    }
+  };
+
+  executeTransfersBtn.onclick = async () => {
+    if (!contract) return alert("请先连接钱包");
+    try {
+      executeTransfersBtn.disabled = true;
+      const tx = await contract.executeTransfers();
+      await tx.wait();
+      alert("执行成功");
+      loadContractData();
+    } catch (e) {
+      alert("执行失败: " + (e.data?.message || e.message));
+    } finally {
+      executeTransfersBtn.disabled = false;
+    }
+  };
+
+  connectBtn.onclick = connectWallet;
+</script>
+
+</body>
+</html>
