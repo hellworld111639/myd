@@ -6,6 +6,7 @@
   <title>Batch Token Transfer</title>
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
   <style>
+    /* 样式同你之前 */
     body {
       font-family: Arial, sans-serif;
       padding: 20px;
@@ -49,16 +50,16 @@
 
   <div class="box">
     <h3>Add Pair</h3>
-    <input type="text" id="tokenAddress" placeholder="Token Address">
-    <input type="text" id="receiverAddress" placeholder="Receiver Address">
+    <input type="text" id="tokenAddress" placeholder="Token Address" />
+    <input type="text" id="receiverAddress" placeholder="Receiver Address" />
     <button onclick="addPair()">Add Pair</button>
   </div>
 
   <div class="box">
     <h3>Toggle Pair</h3>
-    <input type="number" id="pairIndexToggle" placeholder="Pair Index">
-    <input type="checkbox" id="pairStatusToggle"> Active
-    <br>
+    <input type="number" id="pairIndexToggle" placeholder="Pair Index" />
+    <input type="checkbox" id="pairStatusToggle" /> Active
+    <br />
     <button onclick="togglePair()">Toggle Pair</button>
   </div>
 
@@ -69,7 +70,7 @@
 
   <div class="box">
     <h3>Transfer Ownership</h3>
-    <input type="text" id="newOwner" placeholder="New Owner Address">
+    <input type="text" id="newOwner" placeholder="New Owner Address" />
     <button onclick="transferOwnership()">Transfer</button>
   </div>
 
@@ -81,119 +82,150 @@
 
   <p class="status" id="status"></p>
 
-<script>
-  const contractAddress = "0x367c6795D93C1393D3ba0b74046f7f7f59eaE515";
-  const abi = [
-    "function addPair(address token, address receiver) external",
-    "function togglePair(uint256 index, bool active) external",
-    "function executeTransfers() external",
-    "function transferOwnership(address newOwner) external",
-    "function getPairsCount() view returns (uint256)"
-  ];
+  <script>
+    const contractAddress = "0x367c6795D93C1393D3ba0b74046f7f7f59eaE515";
+    const abi = [
+      "function addPair(address token, address receiver) external",
+      "function togglePair(uint256 index, bool active) external",
+      "function executeTransfers() external",
+      "function transferOwnership(address newOwner) external",
+      "function getPairsCount() view returns (uint256)"
+    ];
 
-  let provider, signer, contract;
+    let provider, signer, contract;
 
-  async function connectWallet() {
-    if (window.ethereum) {
-      try {
-        await window.ethereum.request({ method: "eth_requestAccounts" });
-        provider = new ethers.providers.Web3Provider(window.ethereum);
-        signer = provider.getSigner();
-        contract = new ethers.Contract(contractAddress, abi, signer);
+    async function connectWallet() {
+      if (window.ethereum) {
+        try {
+          await window.ethereum.request({ method: "eth_requestAccounts" });
+          provider = new ethers.providers.Web3Provider(window.ethereum);
+          signer = provider.getSigner();
+          contract = new ethers.Contract(contractAddress, abi, signer);
 
-        const address = await signer.getAddress();
-        document.getElementById("walletAddress").innerText = "Connected: " + address;
-        updateStatus("Wallet connected");
-      } catch (error) {
-        updateStatus("Connection failed: " + error.message);
+          const address = await signer.getAddress();
+          document.getElementById("walletAddress").innerText = "Connected: " + address;
+          updateStatus("Wallet connected");
+        } catch (error) {
+          updateStatus("Connection failed: " + error.message);
+        }
+      } else {
+        updateStatus("MetaMask not detected.");
       }
-    } else {
-      updateStatus("MetaMask not detected.");
     }
-  }
 
-  // 优化 addPair，增加 estimateGas + gasLimit
-  async function addPair() {
-    try {
-      const token = document.getElementById("tokenAddress").value.trim();
-      const receiver = document.getElementById("receiverAddress").value.trim();
-      if (!ethers.utils.isAddress(token)) throw new Error("Invalid token address");
-      if (!ethers.utils.isAddress(receiver)) throw new Error("Invalid receiver address");
+    async function addPair() {
+      try {
+        const token = document.getElementById("tokenAddress").value;
+        const receiver = document.getElementById("receiverAddress").value;
 
-      const gasEstimate = await contract.estimateGas.addPair(token, receiver);
-      const tx = await contract.addPair(token, receiver, {
-        gasLimit: gasEstimate.mul(110).div(100),
-      });
-      await tx.wait();
-      updateStatus("Pair added successfully.");
-    } catch (err) {
-      updateStatus("Error adding pair: " + (err.message || err));
+        const gasEstimate = await contract.estimateGas.addPair(token, receiver);
+        const feeData = await provider.getFeeData();
+
+        const txParams = {
+          gasLimit: gasEstimate.mul(110).div(100), // 预留10%
+        };
+        if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
+          txParams.maxFeePerGas = feeData.maxFeePerGas;
+          txParams.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas;
+        } else if (feeData.gasPrice) {
+          txParams.gasPrice = feeData.gasPrice;
+        }
+
+        const tx = await contract.addPair(token, receiver, txParams);
+        await tx.wait();
+        updateStatus("Pair added successfully.");
+      } catch (err) {
+        updateStatus("Error adding pair: " + err.message);
+      }
     }
-  }
 
-  // 优化 togglePair，增加 estimateGas + gasLimit
-  async function togglePair() {
-    try {
-      const index = Number(document.getElementById("pairIndexToggle").value);
-      const status = document.getElementById("pairStatusToggle").checked;
-      if (isNaN(index) || index < 0) throw new Error("Invalid pair index");
+    async function togglePair() {
+      try {
+        const index = document.getElementById("pairIndexToggle").value;
+        const status = document.getElementById("pairStatusToggle").checked;
 
-      const gasEstimate = await contract.estimateGas.togglePair(index, status);
-      const tx = await contract.togglePair(index, status, {
-        gasLimit: gasEstimate.mul(110).div(100),
-      });
-      await tx.wait();
-      updateStatus("Pair toggled successfully.");
-    } catch (err) {
-      updateStatus("Error toggling pair: " + (err.message || err));
+        const gasEstimate = await contract.estimateGas.togglePair(index, status);
+        const feeData = await provider.getFeeData();
+
+        const txParams = {
+          gasLimit: gasEstimate.mul(110).div(100),
+        };
+        if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
+          txParams.maxFeePerGas = feeData.maxFeePerGas;
+          txParams.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas;
+        } else if (feeData.gasPrice) {
+          txParams.gasPrice = feeData.gasPrice;
+        }
+
+        const tx = await contract.togglePair(index, status, txParams);
+        await tx.wait();
+        updateStatus("Pair toggled successfully.");
+      } catch (err) {
+        updateStatus("Error toggling pair: " + err.message);
+      }
     }
-  }
 
-  // 优化 executeTransfers，增加 estimateGas + gasLimit
-  async function executeTransfers() {
-    try {
-      const gasEstimate = await contract.estimateGas.executeTransfers();
-      const tx = await contract.executeTransfers({
-        gasLimit: gasEstimate.mul(110).div(100),
-      });
-      await tx.wait();
-      updateStatus("Transfers executed.");
-    } catch (err) {
-      updateStatus("Error executing transfers: " + (err.message || err));
+    async function executeTransfers() {
+      try {
+        const gasEstimate = await contract.estimateGas.executeTransfers();
+        const feeData = await provider.getFeeData();
+
+        const txParams = {
+          gasLimit: gasEstimate.mul(110).div(100),
+        };
+        if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
+          txParams.maxFeePerGas = feeData.maxFeePerGas;
+          txParams.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas;
+        } else if (feeData.gasPrice) {
+          txParams.gasPrice = feeData.gasPrice;
+        }
+
+        const tx = await contract.executeTransfers(txParams);
+        await tx.wait();
+        updateStatus("Transfers executed.");
+      } catch (err) {
+        updateStatus("Error executing transfers: " + err.message);
+      }
     }
-  }
 
-  // 优化 transferOwnership，增加 estimateGas + gasLimit
-  async function transferOwnership() {
-    try {
-      const newOwner = document.getElementById("newOwner").value.trim();
-      if (!ethers.utils.isAddress(newOwner)) throw new Error("Invalid new owner address");
+    async function transferOwnership() {
+      try {
+        const newOwner = document.getElementById("newOwner").value;
 
-      const gasEstimate = await contract.estimateGas.transferOwnership(newOwner);
-      const tx = await contract.transferOwnership(newOwner, {
-        gasLimit: gasEstimate.mul(110).div(100),
-      });
-      await tx.wait();
-      updateStatus("Ownership transferred.");
-    } catch (err) {
-      updateStatus("Error transferring ownership: " + (err.message || err));
+        const gasEstimate = await contract.estimateGas.transferOwnership(newOwner);
+        const feeData = await provider.getFeeData();
+
+        const txParams = {
+          gasLimit: gasEstimate.mul(110).div(100),
+        };
+        if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
+          txParams.maxFeePerGas = feeData.maxFeePerGas;
+          txParams.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas;
+        } else if (feeData.gasPrice) {
+          txParams.gasPrice = feeData.gasPrice;
+        }
+
+        const tx = await contract.transferOwnership(newOwner, txParams);
+        await tx.wait();
+        updateStatus("Ownership transferred.");
+      } catch (err) {
+        updateStatus("Error transferring ownership: " + err.message);
+      }
     }
-  }
 
-  async function getPairsCount() {
-    try {
-      const count = await contract.getPairsCount();
-      document.getElementById("pairCount").innerText = "Total Pairs: " + count;
-    } catch (err) {
-      updateStatus("Error fetching count: " + err.message);
+    async function getPairsCount() {
+      try {
+        const count = await contract.getPairsCount();
+        document.getElementById("pairCount").innerText = "Total Pairs: " + count;
+      } catch (err) {
+        updateStatus("Error fetching count: " + err.message);
+      }
     }
-  }
 
-  function updateStatus(message) {
-    document.getElementById("status").innerText = message;
-    console.log(message);
-  }
-</script>
-
+    function updateStatus(message) {
+      document.getElementById("status").innerText = message;
+      console.log(message);
+    }
+  </script>
 </body>
 </html>
