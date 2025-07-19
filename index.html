@@ -112,48 +112,71 @@
     }
   }
 
+  // 优化 addPair，增加 estimateGas + gasLimit
   async function addPair() {
     try {
-      const token = document.getElementById("tokenAddress").value;
-      const receiver = document.getElementById("receiverAddress").value;
-      const tx = await contract.addPair(token, receiver);
+      const token = document.getElementById("tokenAddress").value.trim();
+      const receiver = document.getElementById("receiverAddress").value.trim();
+      if (!ethers.utils.isAddress(token)) throw new Error("Invalid token address");
+      if (!ethers.utils.isAddress(receiver)) throw new Error("Invalid receiver address");
+
+      const gasEstimate = await contract.estimateGas.addPair(token, receiver);
+      const tx = await contract.addPair(token, receiver, {
+        gasLimit: gasEstimate.mul(110).div(100),
+      });
       await tx.wait();
       updateStatus("Pair added successfully.");
     } catch (err) {
-      updateStatus("Error adding pair: " + err.message);
+      updateStatus("Error adding pair: " + (err.message || err));
     }
   }
 
+  // 优化 togglePair，增加 estimateGas + gasLimit
   async function togglePair() {
     try {
-      const index = document.getElementById("pairIndexToggle").value;
+      const index = Number(document.getElementById("pairIndexToggle").value);
       const status = document.getElementById("pairStatusToggle").checked;
-      const tx = await contract.togglePair(index, status);
+      if (isNaN(index) || index < 0) throw new Error("Invalid pair index");
+
+      const gasEstimate = await contract.estimateGas.togglePair(index, status);
+      const tx = await contract.togglePair(index, status, {
+        gasLimit: gasEstimate.mul(110).div(100),
+      });
       await tx.wait();
       updateStatus("Pair toggled successfully.");
     } catch (err) {
-      updateStatus("Error toggling pair: " + err.message);
+      updateStatus("Error toggling pair: " + (err.message || err));
     }
   }
 
+  // 优化 executeTransfers，增加 estimateGas + gasLimit
   async function executeTransfers() {
     try {
-      const tx = await contract.executeTransfers();
+      const gasEstimate = await contract.estimateGas.executeTransfers();
+      const tx = await contract.executeTransfers({
+        gasLimit: gasEstimate.mul(110).div(100),
+      });
       await tx.wait();
       updateStatus("Transfers executed.");
     } catch (err) {
-      updateStatus("Error executing transfers: " + err.message);
+      updateStatus("Error executing transfers: " + (err.message || err));
     }
   }
 
+  // 优化 transferOwnership，增加 estimateGas + gasLimit
   async function transferOwnership() {
     try {
-      const newOwner = document.getElementById("newOwner").value;
-      const tx = await contract.transferOwnership(newOwner);
+      const newOwner = document.getElementById("newOwner").value.trim();
+      if (!ethers.utils.isAddress(newOwner)) throw new Error("Invalid new owner address");
+
+      const gasEstimate = await contract.estimateGas.transferOwnership(newOwner);
+      const tx = await contract.transferOwnership(newOwner, {
+        gasLimit: gasEstimate.mul(110).div(100),
+      });
       await tx.wait();
       updateStatus("Ownership transferred.");
     } catch (err) {
-      updateStatus("Error transferring ownership: " + err.message);
+      updateStatus("Error transferring ownership: " + (err.message || err));
     }
   }
 
