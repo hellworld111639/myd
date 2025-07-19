@@ -1,151 +1,176 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8" />
-  <title>Batch Token Transfer DApp</title>
-  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Batch Token Transfer</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
   <style>
     body {
-      font-family: sans-serif;
-      max-width: 600px;
-      margin: 20px auto;
-      padding: 0 10px;
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #f2f2f2;
+    }
+    h2 {
+      color: #333;
     }
     button {
-      margin-top: 8px;
-      padding: 6px 12px;
+      padding: 10px 16px;
+      background-color: #4CAF50;
+      border: none;
+      color: white;
       cursor: pointer;
+      margin-top: 8px;
     }
     input {
-      margin-bottom: 5px;
-      padding: 4px;
-      width: 100%;
-    }
-    .pair {
-      border: 1px solid #ddd;
       padding: 6px;
-      margin-bottom: 5px;
+      margin: 5px;
+      width: 90%;
+    }
+    .box {
+      background: white;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.1);
+    }
+    .status {
+      color: green;
     }
   </style>
 </head>
 <body>
-  <h2>BatchTokenTransfer DApp</h2>
+  <h2>Batch Token Transfer DApp</h2>
 
-  <button onclick="connectWallet()">🔌 连接钱包</button>
-  <p id="walletAddress"></p>
+  <div class="box">
+    <button onclick="connectWallet()">🔌 Connect MetaMask</button>
+    <p id="walletAddress"></p>
+  </div>
 
-  <h3>➕ 添加交易对</h3>
-  <input id="tokenAddress" placeholder="代币地址">
-  <input id="receiverAddress" placeholder="接收者地址">
-  <button onclick="addPair()">添加交易对</button>
+  <div class="box">
+    <h3>Add Pair</h3>
+    <input type="text" id="tokenAddress" placeholder="Token Address">
+    <input type="text" id="receiverAddress" placeholder="Receiver Address">
+    <button onclick="addPair()">Add Pair</button>
+  </div>
 
-  <h3>📋 当前交易对</h3>
-  <div id="pairList"></div>
+  <div class="box">
+    <h3>Toggle Pair</h3>
+    <input type="number" id="pairIndexToggle" placeholder="Pair Index">
+    <input type="checkbox" id="pairStatusToggle"> Active
+    <br>
+    <button onclick="togglePair()">Toggle Pair</button>
+  </div>
 
-  <h3>🚀 执行批量转账</h3>
-  <button onclick="executeTransfers()">执行转账</button>
+  <div class="box">
+    <h3>Execute Transfers</h3>
+    <button onclick="executeTransfers()">Execute</button>
+  </div>
 
-  <h3>👑 转移所有权</h3>
-  <input id="newOwner" placeholder="新所有者地址">
-  <button onclick="transferOwnership()">转移权限</button>
+  <div class="box">
+    <h3>Transfer Ownership</h3>
+    <input type="text" id="newOwner" placeholder="New Owner Address">
+    <button onclick="transferOwnership()">Transfer</button>
+  </div>
 
-  <script>
-    const contractAddress = "0x367c6795D93C1393D3ba0b74046f7f7f59eaE515"; // <-- 替换为你的合约地址
-    const contractABI = [ // 复制 ABI 中相关函数即可
-      "function addPair(address token, address receiver) external",
-      "function togglePair(uint256 index, bool active) external",
-      "function executeTransfers() external",
-      "function transferOwnership(address newOwner) external",
-      "function getPairsCount() external view returns (uint256)",
-      "function pairs(uint256) external view returns (address token, address receiver, bool isActive)"
-    ];
+  <div class="box">
+    <h3>Pairs Count</h3>
+    <button onclick="getPairsCount()">Get Count</button>
+    <p id="pairCount"></p>
+  </div>
 
-    let provider, signer, contract;
+  <p class="status" id="status"></p>
 
-    async function connectWallet() {
-      if (!window.ethereum) {
-        alert("请先安装 MetaMask");
-        return;
+<script>
+  const contractAddress = "0x367c6795D93C1393D3ba0b74046f7f7f59eaE515";
+  const abi = [
+    "function addPair(address token, address receiver) external",
+    "function togglePair(uint256 index, bool active) external",
+    "function executeTransfers() external",
+    "function transferOwnership(address newOwner) external",
+    "function getPairsCount() view returns (uint256)"
+  ];
+
+  let provider, signer, contract;
+
+  async function connectWallet() {
+    if (window.ethereum) {
+      try {
+        await window.ethereum.request({ method: "eth_requestAccounts" });
+        provider = new ethers.providers.Web3Provider(window.ethereum);
+        signer = provider.getSigner();
+        contract = new ethers.Contract(contractAddress, abi, signer);
+
+        const address = await signer.getAddress();
+        document.getElementById("walletAddress").innerText = "Connected: " + address;
+        updateStatus("Wallet connected");
+      } catch (error) {
+        updateStatus("Connection failed: " + error.message);
       }
-      provider = new ethers.providers.Web3Provider(window.ethereum);
-      await provider.send("eth_requestAccounts", []);
-      signer = provider.getSigner();
-      const address = await signer.getAddress();
-      document.getElementById("walletAddress").innerText = "已连接: " + address;
-      contract = new ethers.Contract(contractAddress, contractABI, signer);
-      loadPairs();
+    } else {
+      updateStatus("MetaMask not detected.");
     }
+  }
 
-    async function addPair() {
+  async function addPair() {
+    try {
       const token = document.getElementById("tokenAddress").value;
       const receiver = document.getElementById("receiverAddress").value;
-      try {
-        const tx = await contract.addPair(token, receiver);
-        await tx.wait();
-        alert("添加成功");
-        loadPairs();
-      } catch (err) {
-        alert("添加失败: " + err.message);
-      }
+      const tx = await contract.addPair(token, receiver);
+      await tx.wait();
+      updateStatus("Pair added successfully.");
+    } catch (err) {
+      updateStatus("Error adding pair: " + err.message);
     }
+  }
 
-    async function loadPairs() {
-      const pairList = document.getElementById("pairList");
-      pairList.innerHTML = "加载中...";
-      try {
-        const count = await contract.getPairsCount();
-        let html = "";
-        for (let i = 0; i < count; i++) {
-          const pair = await contract.pairs(i);
-          html += `
-            <div class="pair">
-              <b>索引 ${i}</b><br>
-              Token: ${pair.token}<br>
-              Receiver: ${pair.receiver}<br>
-              状态: ${pair.isActive ? "✅启用" : "❌停用"}<br>
-              <button onclick="togglePair(${i}, ${!pair.isActive})">
-                ${pair.isActive ? "停用" : "启用"}
-              </button>
-            </div>
-          `;
-        }
-        pairList.innerHTML = html || "暂无交易对";
-      } catch (err) {
-        pairList.innerHTML = "加载失败: " + err.message;
-      }
+  async function togglePair() {
+    try {
+      const index = document.getElementById("pairIndexToggle").value;
+      const status = document.getElementById("pairStatusToggle").checked;
+      const tx = await contract.togglePair(index, status);
+      await tx.wait();
+      updateStatus("Pair toggled successfully.");
+    } catch (err) {
+      updateStatus("Error toggling pair: " + err.message);
     }
+  }
 
-    async function togglePair(index, active) {
-      try {
-        const tx = await contract.togglePair(index, active);
-        await tx.wait();
-        alert("状态更新成功");
-        loadPairs();
-      } catch (err) {
-        alert("更新失败: " + err.message);
-      }
+  async function executeTransfers() {
+    try {
+      const tx = await contract.executeTransfers();
+      await tx.wait();
+      updateStatus("Transfers executed.");
+    } catch (err) {
+      updateStatus("Error executing transfers: " + err.message);
     }
+  }
 
-    async function executeTransfers() {
-      try {
-        const tx = await contract.executeTransfers();
-        await tx.wait();
-        alert("批量转账成功");
-      } catch (err) {
-        alert("转账失败: " + err.message);
-      }
-    }
-
-    async function transferOwnership() {
+  async function transferOwnership() {
+    try {
       const newOwner = document.getElementById("newOwner").value;
-      try {
-        const tx = await contract.transferOwnership(newOwner);
-        await tx.wait();
-        alert("权限已转移");
-      } catch (err) {
-        alert("转移失败: " + err.message);
-      }
+      const tx = await contract.transferOwnership(newOwner);
+      await tx.wait();
+      updateStatus("Ownership transferred.");
+    } catch (err) {
+      updateStatus("Error transferring ownership: " + err.message);
     }
-  </script>
+  }
+
+  async function getPairsCount() {
+    try {
+      const count = await contract.getPairsCount();
+      document.getElementById("pairCount").innerText = "Total Pairs: " + count;
+    } catch (err) {
+      updateStatus("Error fetching count: " + err.message);
+    }
+  }
+
+  function updateStatus(message) {
+    document.getElementById("status").innerText = message;
+    console.log(message);
+  }
+</script>
+
 </body>
 </html>
