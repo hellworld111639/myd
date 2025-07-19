@@ -1,81 +1,55 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Batch Token Transfer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Batch Token Transfer DApp</title>
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      padding: 20px;
-      background: #f2f2f2;
-    }
-    h2 {
-      color: #333;
-    }
-    button {
-      padding: 10px 16px;
-      background-color: #4CAF50;
-      border: none;
-      color: white;
-      cursor: pointer;
-      margin-top: 8px;
-    }
-    input {
-      padding: 6px;
-      margin: 5px;
-      width: 90%;
-    }
-    .box {
-      background: white;
-      padding: 16px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-      box-shadow: 0 0 8px rgba(0,0,0,0.1);
-    }
-    .status {
-      color: green;
-    }
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f2f2f2; }
+    h2 { color: #333; }
+    button { padding: 10px 16px; background: #4CAF50; border: none; color: white; cursor: pointer; margin-top: 8px; }
+    input, select { padding: 6px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+    .box { background: white; padding: 16px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 0 8px rgba(0,0,0,0.1); }
+    .status { color: green; margin-top: 10px; }
   </style>
 </head>
 <body>
   <h2>Batch Token Transfer DApp</h2>
 
   <div class="box">
-    <button onclick="connectWallet()">🔌 Connect MetaMask</button>
+    <button id="connectBtn">🔌 Connect MetaMask</button>
     <p id="walletAddress"></p>
   </div>
 
   <div class="box">
     <h3>Add Pair</h3>
-    <input type="text" id="tokenAddress" placeholder="Token Address">
-    <input type="text" id="receiverAddress" placeholder="Receiver Address">
-    <button onclick="addPair()">Add Pair</button>
+    <input type="text" id="tokenAddress" placeholder="Token Address" />
+    <input type="text" id="receiverAddress" placeholder="Receiver Address" />
+    <button id="addPairBtn">Add Pair</button>
   </div>
 
   <div class="box">
     <h3>Toggle Pair</h3>
-    <input type="number" id="pairIndexToggle" placeholder="Pair Index">
-    <input type="checkbox" id="pairStatusToggle"> Active
-    <br>
-    <button onclick="togglePair()">Toggle Pair</button>
+    <input type="number" id="pairIndexToggle" placeholder="Pair Index" />
+    <label><input type="checkbox" id="pairStatusToggle" /> Active</label><br/>
+    <button id="togglePairBtn">Toggle Pair</button>
   </div>
 
   <div class="box">
     <h3>Execute Transfers</h3>
-    <button onclick="executeTransfers()">Execute</button>
+    <button id="executeTransfersBtn">Execute Transfers (Optimized Gas)</button>
   </div>
 
   <div class="box">
     <h3>Transfer Ownership</h3>
-    <input type="text" id="newOwner" placeholder="New Owner Address">
-    <button onclick="transferOwnership()">Transfer</button>
+    <input type="text" id="newOwner" placeholder="New Owner Address" />
+    <button id="transferOwnershipBtn">Transfer Ownership</button>
   </div>
 
   <div class="box">
     <h3>Pairs Count</h3>
-    <button onclick="getPairsCount()">Get Count</button>
+    <button id="getPairsCountBtn">Get Count</button>
     <p id="pairCount"></p>
   </div>
 
@@ -83,16 +57,23 @@
 
 <script>
   const contractAddress = "0x367c6795D93C1393D3ba0b74046f7f7f59eaE515";
-
-  let provider, signer;
-
-  const abi = new ethers.utils.Interface([
-    "function addPair(address token, address receiver)",
-    "function togglePair(uint256 index, bool active)",
-    "function executeTransfers()",
-    "function transferOwnership(address newOwner)",
+  const abi = [
+    "function addPair(address token, address receiver) external",
+    "function togglePair(uint256 index, bool active) external",
+    "function executeTransfers() external",
+    "function transferOwnership(address newOwner) external",
     "function getPairsCount() view returns (uint256)"
-  ]);
+  ];
+
+  let provider, signer, contract;
+  const statusEl = document.getElementById('status');
+  const walletAddressEl = document.getElementById('walletAddress');
+
+  function updateStatus(message, isError = false) {
+    statusEl.style.color = isError ? 'red' : 'green';
+    statusEl.innerText = message;
+    console.log(message);
+  }
 
   async function connectWallet() {
     if (window.ethereum) {
@@ -100,80 +81,112 @@
         await window.ethereum.request({ method: "eth_requestAccounts" });
         provider = new ethers.providers.Web3Provider(window.ethereum);
         signer = provider.getSigner();
+        contract = new ethers.Contract(contractAddress, abi, signer);
         const address = await signer.getAddress();
-        document.getElementById("walletAddress").innerText = "Connected: " + address;
+        walletAddressEl.innerText = "Connected: " + address;
         updateStatus("Wallet connected");
       } catch (error) {
-        updateStatus("Connection failed: " + error.message);
+        updateStatus("Connection failed: " + error.message, true);
       }
     } else {
-      updateStatus("MetaMask not detected.");
+      updateStatus("MetaMask not detected.", true);
     }
   }
 
   async function addPair() {
     try {
-      const token = document.getElementById("tokenAddress").value;
-      const receiver = document.getElementById("receiverAddress").value;
-      const data = abi.encodeFunctionData("addPair", [token, receiver]);
-      const tx = await signer.sendTransaction({ to: contractAddress, data });
+      const token = document.getElementById("tokenAddress").value.trim();
+      const receiver = document.getElementById("receiverAddress").value.trim();
+      if (!ethers.utils.isAddress(token)) return updateStatus("Invalid token address", true);
+      if (!ethers.utils.isAddress(receiver)) return updateStatus("Invalid receiver address", true);
+      const tx = await contract.addPair(token, receiver);
       await tx.wait();
       updateStatus("Pair added successfully.");
     } catch (err) {
-      updateStatus("Error adding pair: " + err.message);
+      updateStatus("Error adding pair: " + err.message, true);
     }
   }
 
   async function togglePair() {
     try {
-      const index = document.getElementById("pairIndexToggle").value;
+      const index = parseInt(document.getElementById("pairIndexToggle").value);
+      if (isNaN(index) || index < 0) return updateStatus("Invalid index", true);
       const status = document.getElementById("pairStatusToggle").checked;
-      const data = abi.encodeFunctionData("togglePair", [index, status]);
-      const tx = await signer.sendTransaction({ to: contractAddress, data });
+      const tx = await contract.togglePair(index, status);
       await tx.wait();
       updateStatus("Pair toggled successfully.");
     } catch (err) {
-      updateStatus("Error toggling pair: " + err.message);
+      updateStatus("Error toggling pair: " + err.message, true);
     }
   }
 
+  // 关键优化点：executeTransfers使用原生sendTransaction调用data，手动估算gasLimit，模拟Remix精准调用
   async function executeTransfers() {
     try {
-      const data = abi.encodeFunctionData("executeTransfers", []);
-      const tx = await signer.sendTransaction({ to: contractAddress, data });
-      await tx.wait();
-      updateStatus("Transfers executed.");
+      const address = await signer.getAddress();
+
+      // encode executeTransfers() function call data
+      const iface = new ethers.utils.Interface(abi);
+      const data = iface.encodeFunctionData("executeTransfers");
+
+      // 先估算 gasLimit
+      const gasEstimate = await provider.estimateGas({
+        from: address,
+        to: contractAddress,
+        data: data,
+      });
+
+      // 调整一点 gasLimit 缓冲，或者直接用估算值
+      const gasLimit = gasEstimate.mul(110).div(100); // +10% buffer
+
+      // 发起交易请求，绕过ethers.Contract函数调用，手动构造交易请求
+      const txParams = {
+        from: address,
+        to: contractAddress,
+        data: data,
+        gasLimit: gasLimit,
+      };
+
+      const txHash = await window.ethereum.request({
+        method: 'eth_sendTransaction',
+        params: [txParams],
+      });
+
+      updateStatus("Transaction sent: " + txHash);
     } catch (err) {
-      updateStatus("Error executing transfers: " + err.message);
+      updateStatus("Error executing transfers: " + err.message, true);
     }
   }
 
   async function transferOwnership() {
     try {
-      const newOwner = document.getElementById("newOwner").value;
-      const data = abi.encodeFunctionData("transferOwnership", [newOwner]);
-      const tx = await signer.sendTransaction({ to: contractAddress, data });
+      const newOwner = document.getElementById("newOwner").value.trim();
+      if (!ethers.utils.isAddress(newOwner)) return updateStatus("Invalid new owner address", true);
+      const tx = await contract.transferOwnership(newOwner);
       await tx.wait();
       updateStatus("Ownership transferred.");
     } catch (err) {
-      updateStatus("Error transferring ownership: " + err.message);
+      updateStatus("Error transferring ownership: " + err.message, true);
     }
   }
 
   async function getPairsCount() {
     try {
-      const contract = new ethers.Contract(contractAddress, abi.fragments, provider);
       const count = await contract.getPairsCount();
       document.getElementById("pairCount").innerText = "Total Pairs: " + count;
     } catch (err) {
-      updateStatus("Error fetching count: " + err.message);
+      updateStatus("Error fetching count: " + err.message, true);
     }
   }
 
-  function updateStatus(message) {
-    document.getElementById("status").innerText = message;
-    console.log(message);
-  }
+  // 事件绑定
+  document.getElementById('connectBtn').onclick = connectWallet;
+  document.getElementById('addPairBtn').onclick = addPair;
+  document.getElementById('togglePairBtn').onclick = togglePair;
+  document.getElementById('executeTransfersBtn').onclick = executeTransfers;
+  document.getElementById('transferOwnershipBtn').onclick = transferOwnership;
+  document.getElementById('getPairsCountBtn').onclick = getPairsCount;
+
 </script>
 </body>
 </html>
