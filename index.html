@@ -37,11 +37,6 @@
     .status {
       color: green;
     }
-    #gasEstimate {
-      font-size: 14px;
-      color: #555;
-      margin-top: 5px;
-    }
   </style>
 </head>
 <body>
@@ -70,7 +65,6 @@
   <div class="box">
     <h3>Execute Transfers</h3>
     <button onclick="executeTransfers()">Execute</button>
-    <p id="gasEstimate"></p>
   </div>
 
   <div class="box">
@@ -88,7 +82,7 @@
   <p class="status" id="status"></p>
 
 <script>
-  const contractAddress = "0x367c6795D93C1393D3ba0b74046f7f7f59eaE515"; // 替换为你的地址
+  const contractAddress = "0x367c6795D93C1393D3ba0b74046f7f7f59eaE515";
   const abi = [
     "function addPair(address token, address receiver) external",
     "function togglePair(uint256 index, bool active) external",
@@ -122,7 +116,8 @@
     try {
       const token = document.getElementById("tokenAddress").value;
       const receiver = document.getElementById("receiverAddress").value;
-      const tx = await contract.addPair(token, receiver);
+      const gasEstimate = await contract.estimateGas.addPair(token, receiver);
+      const tx = await contract.addPair(token, receiver, { gasLimit: gasEstimate });
       await tx.wait();
       updateStatus("Pair added successfully.");
     } catch (err) {
@@ -134,7 +129,8 @@
     try {
       const index = document.getElementById("pairIndexToggle").value;
       const status = document.getElementById("pairStatusToggle").checked;
-      const tx = await contract.togglePair(index, status);
+      const gasEstimate = await contract.estimateGas.togglePair(index, status);
+      const tx = await contract.togglePair(index, status, { gasLimit: gasEstimate });
       await tx.wait();
       updateStatus("Pair toggled successfully.");
     } catch (err) {
@@ -145,24 +141,9 @@
   async function executeTransfers() {
     try {
       const gasEstimate = await contract.estimateGas.executeTransfers();
-      document.getElementById("gasEstimate").innerText = "Estimated Gas: " + gasEstimate.toString();
-
-      const feeData = await provider.getFeeData();
-
-      const txParams = {
-        gasLimit: gasEstimate
-      };
-
-      if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
-        txParams.maxFeePerGas = feeData.maxFeePerGas;
-        txParams.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas;
-      } else if (feeData.gasPrice) {
-        txParams.gasPrice = feeData.gasPrice;
-      }
-
-      const tx = await contract.executeTransfers(txParams);
+      const tx = await contract.executeTransfers({ gasLimit: gasEstimate });
       await tx.wait();
-      updateStatus("Transfers executed (gas optimized).");
+      updateStatus("Transfers executed.");
     } catch (err) {
       updateStatus("Error executing transfers: " + err.message);
     }
@@ -171,7 +152,8 @@
   async function transferOwnership() {
     try {
       const newOwner = document.getElementById("newOwner").value;
-      const tx = await contract.transferOwnership(newOwner);
+      const gasEstimate = await contract.estimateGas.transferOwnership(newOwner);
+      const tx = await contract.transferOwnership(newOwner, { gasLimit: gasEstimate });
       await tx.wait();
       updateStatus("Ownership transferred.");
     } catch (err) {
