@@ -1,71 +1,53 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Simple Token Sender DApp</title>
-  <script src="https://cdn.jsdelivr.net/npm/web3@1.7.0/dist/web3.min.js"></script>
-  <style>
-    body { font-family: Arial; margin: 20px; }
-    button { margin: 5px 0; padding: 10px; }
-    input, select { margin-bottom: 10px; width: 300px; padding: 8px; }
-    .section { margin-bottom: 30px; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BatchTokenTransfer DApp</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 1rem; }
+  input, button { padding: 0.5rem; margin: 0.3rem 0; width: 100%; box-sizing: border-box; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: center; }
+  th { background-color: #eee; }
+  .toggle-btn { cursor: pointer; padding: 4px 8px; border-radius: 4px; border: none; }
+  .active { background-color: #4CAF50; color: white; }
+  .inactive { background-color: #f44336; color: white; }
+  #status { margin: 1rem 0; font-weight: bold; }
+</style>
+<script src="https://cdn.ethers.io/lib/ethers-5.7.2.min.js" type="application/javascript"></script>
 </head>
 <body>
-  <h1>Simple Token Sender DApp</h1>
-  <div class="section">
-    <button onclick="connectWallet()">连接钱包</button>
-    <p id="walletAddress">未连接</p>
-  </div>
 
-  <div class="section">
-    <h3>添加交易对</h3>
-    <input id="tokenAddress" placeholder="Token地址" /><br>
-    <input id="receiverAddress" placeholder="接收者地址" /><br>
-    <input id="pairName" placeholder="名称（自定义）" /><br>
-    <button onclick="addPair()">添加</button>
-  </div>
+<h2>BatchTokenTransfer DApp</h2>
 
-  <div class="section">
-    <h3>控制功能</h3>
-    <input id="pairIndex" placeholder="交易对编号" /><br>
-    <select id="pairStatus">
-      <option value="true">启用</option>
-      <option value="false">停用</option>
-    </select><br>
-    <button onclick="togglePair()">设置交易对状态</button>
+<button id="connectBtn">Connect Wallet</button>
+<div id="account"></div>
 
-    <select id="autoTransfer">
-      <option value="true">开启自动转账</option>
-      <option value="false">关闭自动转账</option>
-    </select><br>
-    <button onclick="toggleAutoTransfer()">设置自动转账</button><br>
+<h3>Pairs List</h3>
+<div>
+  Total pairs: <span id="pairsCount">0</span>
+</div>
+<table id="pairsTable">
+  <thead>
+    <tr><th>Index</th><th>Token Address</th><th>Receiver Address</th><th>Active</th><th>Toggle</th></tr>
+  </thead>
+  <tbody></tbody>
+</table>
 
-    <input id="newGasLimit" placeholder="新的 maxGasPerPair" /><br>
-    <button onclick="setMaxGas()">修改 maxGasPerPair</button><br>
+<h3>Add New Pair</h3>
+<input type="text" id="tokenAddress" placeholder="Token contract address" />
+<input type="text" id="receiverAddress" placeholder="Receiver address" />
+<button id="addPairBtn">Add Pair</button>
 
-    <input id="newMaxGasPrice" placeholder="新的最大 gasPrice (wei)" /><br>
-    <button onclick="setMaxGasPrice()">修改最大 gasPrice</button>
-  </div>
+<h3>Execute Transfers</h3>
+<button id="execTransfersBtn">Execute Transfers</button>
 
-  <div class="section">
-    <h3>执行功能</h3>
-    <button onclick="executeTransfers()">立即执行转账</button>
-  </div>
+<div id="status"></div>
 
-  <div class="section">
-    <h3>查询状态</h3>
-    <button onclick="checkCanExecute()">是否可执行转账</button>
-    <button onclick="getPairs()">查看所有交易对</button>
-    <button onclick="getGasSettings()">查看 Gas 设置</button>
-    <button onclick="getTransferInfo()">转账状态/上次时间</button>
-  </div>
-
-  <script>
-    let web3;
-    let contract;
-    const contractAddress = "0x58753f500A22420784f277439b358e3d6cb44AFa";
-    const abi = [
+<script>
+  const CONTRACT_ADDRESS = "0x367c6795D93C1393D3ba0b74046f7f7f59eaE515"; // 替换成你的合约地址
+  const CONTRACT_ABI = [
 	{
 		"inputs": [
 			{
@@ -77,11 +59,6 @@
 				"internalType": "address",
 				"name": "receiver",
 				"type": "address"
-			},
-			{
-				"internalType": "string",
-				"name": "name",
-				"type": "string"
 			}
 		],
 		"name": "addPair",
@@ -100,78 +77,6 @@
 		"inputs": [],
 		"stateMutability": "nonpayable",
 		"type": "constructor"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "owner",
-				"type": "address"
-			}
-		],
-		"name": "OwnableInvalidOwner",
-		"type": "error"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "account",
-				"type": "address"
-			}
-		],
-		"name": "OwnableUnauthorizedAccount",
-		"type": "error"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "token",
-				"type": "address"
-			}
-		],
-		"name": "SafeERC20FailedOperation",
-		"type": "error"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "bool",
-				"name": "enabled",
-				"type": "bool"
-			}
-		],
-		"name": "AutoTransferToggled",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "newMaxGas",
-				"type": "uint256"
-			}
-		],
-		"name": "MaxGasPerPairUpdated",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "newMaxGasPrice",
-				"type": "uint256"
-			}
-		],
-		"name": "MaxGasPriceUpdated",
-		"type": "event"
 	},
 	{
 		"anonymous": false,
@@ -212,12 +117,6 @@
 				"internalType": "address",
 				"name": "receiver",
 				"type": "address"
-			},
-			{
-				"indexed": false,
-				"internalType": "string",
-				"name": "name",
-				"type": "string"
 			}
 		],
 		"name": "PairAdded",
@@ -243,52 +142,6 @@
 		"type": "event"
 	},
 	{
-		"inputs": [],
-		"name": "renounceOwnership",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "newMaxGas",
-				"type": "uint256"
-			}
-		],
-		"name": "setMaxGasPerPair",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "newMaxGasPrice",
-				"type": "uint256"
-			}
-		],
-		"name": "setMaxGasPrice",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bool",
-				"name": "enabled",
-				"type": "bool"
-			}
-		],
-		"name": "toggleAutoTransfer",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
 		"inputs": [
 			{
 				"internalType": "uint256",
@@ -297,7 +150,7 @@
 			},
 			{
 				"internalType": "bool",
-				"name": "isActive",
+				"name": "active",
 				"type": "bool"
 			}
 		],
@@ -305,19 +158,6 @@
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "pairCount",
-				"type": "uint256"
-			}
-		],
-		"name": "TransferExecuted",
-		"type": "event"
 	},
 	{
 		"inputs": [
@@ -333,34 +173,17 @@
 		"type": "function"
 	},
 	{
-		"stateMutability": "payable",
-		"type": "receive"
-	},
-	{
-		"inputs": [],
-		"name": "autoTransferEnabled",
-		"outputs": [
+		"anonymous": false,
+		"inputs": [
 			{
-				"internalType": "bool",
-				"name": "",
-				"type": "bool"
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "total",
+				"type": "uint256"
 			}
 		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "canExecuteNow",
-		"outputs": [
-			{
-				"internalType": "bool",
-				"name": "",
-				"type": "bool"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
+		"name": "TransfersExecuted",
+		"type": "event"
 	},
 	{
 		"inputs": [],
@@ -377,81 +200,7 @@
 	},
 	{
 		"inputs": [],
-		"name": "FIXED_INTERVAL",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "getAllPairs",
-		"outputs": [
-			{
-				"components": [
-					{
-						"internalType": "address",
-						"name": "token",
-						"type": "address"
-					},
-					{
-						"internalType": "address",
-						"name": "receiver",
-						"type": "address"
-					},
-					{
-						"internalType": "bool",
-						"name": "isActive",
-						"type": "bool"
-					},
-					{
-						"internalType": "string",
-						"name": "name",
-						"type": "string"
-					}
-				],
-				"internalType": "struct SimpleTokenSender.Pair[]",
-				"name": "",
-				"type": "tuple[]"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "lastGlobalTransferTime",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "maxGasPerPair",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "maxGasPrice",
+		"name": "getPairsCount",
 		"outputs": [
 			{
 				"internalType": "uint256",
@@ -499,91 +248,116 @@
 				"internalType": "bool",
 				"name": "isActive",
 				"type": "bool"
-			},
-			{
-				"internalType": "string",
-				"name": "name",
-				"type": "string"
 			}
 		],
 		"stateMutability": "view",
 		"type": "function"
 	}
-]; // 替换为你的 ABI
+]
 
-    async function connectWallet() {
-      if (window.ethereum) {
-        web3 = new Web3(window.ethereum);
-        await window.ethereum.request({ method: 'eth_requestAccounts' });
-        const accounts = await web3.eth.getAccounts();
-        document.getElementById("walletAddress").innerText = accounts[0];
-        contract = new web3.eth.Contract(abi, contractAddress);
-      } else {
-        alert("请使用支持以太坊的钱包，如MetaMask");
-      }
+  let provider, signer, contract;
+
+  const connectBtn = document.getElementById("connectBtn");
+  const accountDiv = document.getElementById("account");
+  const pairsCountSpan = document.getElementById("pairsCount");
+  const pairsTableBody = document.querySelector("#pairsTable tbody");
+  const addPairBtn = document.getElementById("addPairBtn");
+  const execTransfersBtn = document.getElementById("execTransfersBtn");
+  const statusDiv = document.getElementById("status");
+
+  async function connectWallet() {
+    if (!window.ethereum) {
+      alert("Please install MetaMask!");
+      return;
+    }
+    provider = new ethers.providers.Web3Provider(window.ethereum);
+    await provider.send("eth_requestAccounts", []);
+    signer = provider.getSigner();
+    const address = await signer.getAddress();
+    accountDiv.textContent = "Connected: " + address;
+
+    contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+
+    await loadPairs();
+  }
+
+  async function loadPairs() {
+    pairsTableBody.innerHTML = "";
+    const count = await contract.getPairsCount();
+    pairsCountSpan.textContent = count.toString();
+
+    for (let i = 0; i < count; i++) {
+      const pair = await contract.pairs(i);
+      const tr = document.createElement("tr");
+
+      tr.innerHTML = `
+        <td>${i}</td>
+        <td>${pair.token}</td>
+        <td>${pair.receiver}</td>
+        <td>${pair.isActive ? "Yes" : "No"}</td>
+        <td><button class="toggle-btn ${pair.isActive ? "active" : "inactive"}" data-index="${i}">${pair.isActive ? "Disable" : "Enable"}</button></td>
+      `;
+
+      pairsTableBody.appendChild(tr);
     }
 
-    async function addPair() {
-      const token = document.getElementById("tokenAddress").value;
-      const receiver = document.getElementById("receiverAddress").value;
-      const name = document.getElementById("pairName").value;
-      const account = (await web3.eth.getAccounts())[0];
-      await contract.methods.addPair(token, receiver, name).send({ from: account });
+    // 给 toggle 按钮添加事件
+    document.querySelectorAll(".toggle-btn").forEach(btn => {
+      btn.onclick = async (e) => {
+        const index = e.target.getAttribute("data-index");
+        const newActive = !(e.target.textContent === "Disable");
+        try {
+          statusDiv.textContent = "Sending toggle transaction...";
+          const tx = await contract.togglePair(index, newActive);
+          await tx.wait();
+          statusDiv.textContent = "Toggle successful!";
+          await loadPairs();
+        } catch (error) {
+          statusDiv.textContent = "Error: " + error.message;
+        }
+      };
+    });
+  }
+
+  addPairBtn.onclick = async () => {
+    const token = document.getElementById("tokenAddress").value.trim();
+    const receiver = document.getElementById("receiverAddress").value.trim();
+
+    if (!ethers.utils.isAddress(token)) {
+      alert("Invalid token address");
+      return;
+    }
+    if (!ethers.utils.isAddress(receiver)) {
+      alert("Invalid receiver address");
+      return;
     }
 
-    async function togglePair() {
-      const index = document.getElementById("pairIndex").value;
-      const status = document.getElementById("pairStatus").value === 'true';
-      const account = (await web3.eth.getAccounts())[0];
-      await contract.methods.togglePair(index, status).send({ from: account });
+    try {
+      statusDiv.textContent = "Sending addPair transaction...";
+      const tx = await contract.addPair(token, receiver);
+      await tx.wait();
+      statusDiv.textContent = "Pair added successfully!";
+      document.getElementById("tokenAddress").value = "";
+      document.getElementById("receiverAddress").value = "";
+      await loadPairs();
+    } catch (error) {
+      statusDiv.textContent = "Error: " + error.message;
     }
+  };
 
-    async function toggleAutoTransfer() {
-      const enabled = document.getElementById("autoTransfer").value === 'true';
-      const account = (await web3.eth.getAccounts())[0];
-      await contract.methods.toggleAutoTransfer(enabled).send({ from: account });
+  execTransfersBtn.onclick = async () => {
+    try {
+      statusDiv.textContent = "Sending executeTransfers transaction...";
+      const tx = await contract.executeTransfers();
+      await tx.wait();
+      statusDiv.textContent = "Transfers executed!";
+    } catch (error) {
+      statusDiv.textContent = "Error: " + error.message;
     }
+  };
 
-    async function setMaxGas() {
-      const newGas = document.getElementById("newGasLimit").value;
-      const account = (await web3.eth.getAccounts())[0];
-      await contract.methods.setMaxGasPerPair(newGas).send({ from: account });
-    }
+  connectBtn.onclick = connectWallet;
+</script>
 
-    async function setMaxGasPrice() {
-      const newPrice = document.getElementById("newMaxGasPrice").value;
-      const account = (await web3.eth.getAccounts())[0];
-      await contract.methods.setMaxGasPrice(newPrice).send({ from: account });
-    }
-
-    async function executeTransfers() {
-      const account = (await web3.eth.getAccounts())[0];
-      await contract.methods.executeTransfers().send({ from: account });
-    }
-
-    async function checkCanExecute() {
-      const result = await contract.methods.canExecuteNow().call();
-      alert("可执行转账: " + result);
-    }
-
-    async function getPairs() {
-      const pairs = await contract.methods.getAllPairs().call();
-      console.log("交易对：", pairs);
-      alert("共" + pairs.length + "个交易对。详情见控制台。")
-    }
-
-    async function getGasSettings() {
-      const gas = await contract.methods.maxGasPerPair().call();
-      const price = await contract.methods.MAX_GASPRICE().call();
-      alert(`Gas/交易对：${gas}\n最大Gas价格：${price} wei`);
-    }
-
-    async function getTransferInfo() {
-      const lastTime = await contract.methods.lastGlobalTransferTime().call();
-      const enabled = await contract.methods.autoTransferEnabled().call();
-      const owner = await contract.methods.owner().call();
-      alert(`上次转账时间戳：${lastTime}\n自动转账：${enabled}\n合约Owner：${owner}`);
-    }
-  </script>
 </body>
 </html>
