@@ -1,248 +1,199 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>BatchTokenTransfer Dapp</title>
-<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
+<title>Batch Token Transfer DApp</title>
 <style>
-  body { font-family: Arial, sans-serif; padding: 20px; max-width: 720px; margin: auto; }
-  input[type=text] { width: 300px; padding: 6px; margin-right: 10px; }
-  button { padding: 6px 12px; margin: 5px 0; }
-  table { border-collapse: collapse; width: 100%; margin-top: 15px; }
-  th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-  th { background-color: #f2f2f2; }
-  .status { margin-top: 10px; font-weight: bold; }
+  body { font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 1rem; }
+  input, button { padding: 0.5rem; margin: 0.3rem 0; width: 100%; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+  th { background: #f4f4f4; }
+  .btn-small { width: auto; padding: 0.3rem 0.6rem; margin: 0 0.2rem; }
 </style>
 </head>
 <body>
 
-<h1>BatchTokenTransfer Dapp</h1>
+<h1>Batch Token Transfer</h1>
 
-<button id="connectButton">连接 MetaMask 钱包</button>
-<div id="walletInfo" style="margin-top: 12px;"></div>
+<button id="connectBtn">连接钱包</button>
+<div id="account"></div>
 
-<hr />
+<h2>添加交易对</h2>
+<input type="text" id="tokenAddress" placeholder="Token 合约地址" />
+<input type="text" id="receiverAddress" placeholder="接收地址" />
+<button id="addPairBtn">添加交易对</button>
 
-<h2>合约交易对管理</h2>
-
-<div>
-  <input type="text" id="tokenInput" placeholder="代币合约地址" />
-  <input type="text" id="receiverInput" placeholder="接收地址" />
-  <button id="addPairBtn">添加交易对</button>
-</div>
-
-<table id="pairsTable" style="display:none;">
+<h2>交易对列表</h2>
+<table>
   <thead>
     <tr>
       <th>索引</th>
-      <th>代币地址</th>
+      <th>Token 地址</th>
       <th>接收地址</th>
       <th>激活状态</th>
-      <th>切换激活</th>
+      <th>操作</th>
     </tr>
   </thead>
-  <tbody></tbody>
+  <tbody id="pairsTableBody">
+    <!-- 交易对行 -->
+  </tbody>
 </table>
 
-<button id="execTransfersBtn" style="display:none;">执行批量转账</button>
+<button id="executeBtn">执行批量转账</button>
 
-<hr />
-
-<h2>合约所有权</h2>
-<div>当前所有者: <span id="currentOwner">-</span></div>
-<input type="text" id="newOwnerInput" placeholder="输入新所有者地址" style="width: 300px; margin-top: 8px;" />
+<h2>转移合约所有权</h2>
+<input type="text" id="newOwner" placeholder="新所有者地址" />
 <button id="transferOwnerBtn">转移所有权</button>
 
-<div id="status" class="status"></div>
+<div id="status"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
 <script>
-  const contractAddress = "0x367c6795D93C1393D3ba0b74046f7f7f59eaE515"; // 替换成你的合约地址
+  const contractAddress = "0x367c6795D93C1393D3ba0b74046f7f7f59eaE515";
   const contractABI = [
-    "function owner() view returns (address)",
-    "function transferOwnership(address newOwner) external",
+    // 只截取你合约主要接口，方便示范
     "function addPair(address token, address receiver) external",
     "function togglePair(uint256 index, bool active) external",
     "function executeTransfers() external",
     "function getPairsCount() external view returns (uint256)",
-    "function pairs(uint256) external view returns (address token, address receiver, bool isActive)"
+    "function pairs(uint256) external view returns (address token, address receiver, bool isActive)",
+    "function transferOwnership(address newOwner) external",
+    "function owner() view returns (address)"
   ];
 
   let provider, signer, contract;
+  let userAddress;
 
-  const connectButton = document.getElementById("connectButton");
-  const walletInfo = document.getElementById("walletInfo");
-  const tokenInput = document.getElementById("tokenInput");
-  const receiverInput = document.getElementById("receiverInput");
+  const connectBtn = document.getElementById("connectBtn");
+  const accountDiv = document.getElementById("account");
   const addPairBtn = document.getElementById("addPairBtn");
-  const pairsTable = document.getElementById("pairsTable");
-  const pairsTableBody = pairsTable.querySelector("tbody");
-  const execTransfersBtn = document.getElementById("execTransfersBtn");
-  const currentOwnerSpan = document.getElementById("currentOwner");
-  const newOwnerInput = document.getElementById("newOwnerInput");
+  const executeBtn = document.getElementById("executeBtn");
   const transferOwnerBtn = document.getElementById("transferOwnerBtn");
-  const statusP = document.getElementById("status");
+  const statusDiv = document.getElementById("status");
+  const pairsTableBody = document.getElementById("pairsTableBody");
 
   async function connectWallet() {
     if (!window.ethereum) {
-      alert("请安装 MetaMask!");
+      alert("请安装 MetaMask！");
       return;
     }
-    try {
-      await window.ethereum.request({ method: "eth_requestAccounts" });
-      provider = new ethers.providers.Web3Provider(window.ethereum);
-      signer = provider.getSigner();
-      walletInfo.textContent = "钱包已连接，地址：" + (await signer.getAddress());
-
-      contract = new ethers.Contract(contractAddress, contractABI, signer);
-
-      await refreshOwner();
-      await refreshPairs();
-
-      connectButton.disabled = true;
-      addPairBtn.disabled = false;
-      execTransfersBtn.style.display = "inline-block";
-      pairsTable.style.display = "table";
-    } catch (err) {
-      console.error(err);
-      walletInfo.textContent = "连接失败，请重试。";
-    }
-  }
-
-  async function refreshOwner() {
-    try {
-      const owner = await contract.owner();
-      currentOwnerSpan.textContent = owner;
-    } catch {
-      currentOwnerSpan.textContent = "读取失败";
-    }
+    provider = new ethers.providers.Web3Provider(window.ethereum);
+    await provider.send("eth_requestAccounts", []);
+    signer = provider.getSigner();
+    userAddress = await signer.getAddress();
+    accountDiv.textContent = "已连接账户：" + userAddress;
+    contract = new ethers.Contract(contractAddress, contractABI, signer);
+    connectBtn.disabled = true;
+    await refreshPairs();
+    showStatus("钱包连接成功");
   }
 
   async function refreshPairs() {
     pairsTableBody.innerHTML = "";
     try {
       const count = await contract.getPairsCount();
-      if (count.toNumber() === 0) {
-        pairsTable.style.display = "none";
-        execTransfersBtn.style.display = "none";
-        return;
-      }
-      pairsTable.style.display = "table";
-      execTransfersBtn.style.display = "inline-block";
       for (let i = 0; i < count; i++) {
-        const pair = await contract.pairs(i);
+        const p = await contract.pairs(i);
+        // p = [token,address, receiver address, bool active]
         const tr = document.createElement("tr");
 
         const tokenTd = document.createElement("td");
-        tokenTd.textContent = pair.token;
-        tr.appendChild(tokenTd);
-
+        tokenTd.textContent = p.token;
         const receiverTd = document.createElement("td");
-        receiverTd.textContent = pair.receiver;
-        tr.appendChild(receiverTd);
-
+        receiverTd.textContent = p.receiver;
         const activeTd = document.createElement("td");
-        activeTd.textContent = pair.isActive ? "是" : "否";
-        tr.appendChild(activeTd);
-
-        const toggleTd = document.createElement("td");
-        const toggleBtn = document.createElement("button");
-        toggleBtn.textContent = pair.isActive ? "关闭" : "开启";
-        toggleBtn.onclick = async () => {
-          setStatus("等待确认切换交易对状态...");
-          try {
-            const tx = await contract.togglePair(i, !pair.isActive);
-            await tx.wait();
-            setStatus("交易对状态切换成功");
-            await refreshPairs();
-          } catch (e) {
-            console.error(e);
-            setStatus("切换失败或交易被取消", true);
-          }
-        };
-        toggleTd.appendChild(toggleBtn);
-        tr.appendChild(document.createElement("td"));
-        tr.children[4].appendChild(toggleBtn);
-
-        // 第一列加索引
+        activeTd.textContent = p.isActive ? "激活" : "关闭";
         const indexTd = document.createElement("td");
         indexTd.textContent = i;
-        tr.insertBefore(indexTd, tr.firstChild);
 
+        const actionsTd = document.createElement("td");
+        const toggleBtn = document.createElement("button");
+        toggleBtn.textContent = p.isActive ? "关闭" : "激活";
+        toggleBtn.className = "btn-small";
+        toggleBtn.onclick = async () => {
+          try {
+            showStatus(`切换交易对${i}状态中...`);
+            const tx = await contract.togglePair(i, !p.isActive);
+            await tx.wait();
+            showStatus(`交易对${i}状态切换成功`);
+            await refreshPairs();
+          } catch (e) {
+            showStatus("切换失败: " + e.message);
+          }
+        };
+        actionsTd.appendChild(toggleBtn);
+
+        tr.appendChild(indexTd);
+        tr.appendChild(tokenTd);
+        tr.appendChild(receiverTd);
+        tr.appendChild(activeTd);
+        tr.appendChild(actionsTd);
         pairsTableBody.appendChild(tr);
       }
     } catch (e) {
-      console.error(e);
-      pairsTableBody.innerHTML = "<tr><td colspan='5'>读取交易对失败</td></tr>";
+      showStatus("读取交易对失败: " + e.message);
     }
   }
 
   async function addPair() {
-    const token = tokenInput.value.trim();
-    const receiver = receiverInput.value.trim();
-    if (!ethers.utils.isAddress(token)) {
-      alert("请输入合法的代币合约地址");
+    const tokenAddr = document.getElementById("tokenAddress").value.trim();
+    const receiverAddr = document.getElementById("receiverAddress").value.trim();
+    if (!ethers.utils.isAddress(tokenAddr) || !ethers.utils.isAddress(receiverAddr)) {
+      alert("请输入有效的地址");
       return;
     }
-    if (!ethers.utils.isAddress(receiver)) {
-      alert("请输入合法的接收地址");
-      return;
-    }
-    setStatus("等待用户确认添加交易对...");
     try {
-      const tx = await contract.addPair(token, receiver);
+      showStatus("添加交易对中...");
+      const tx = await contract.addPair(tokenAddr, receiverAddr);
       await tx.wait();
-      setStatus("添加交易对成功");
-      tokenInput.value = "";
-      receiverInput.value = "";
+      showStatus("添加成功");
+      document.getElementById("tokenAddress").value = "";
+      document.getElementById("receiverAddress").value = "";
       await refreshPairs();
     } catch (e) {
-      console.error(e);
-      setStatus("添加交易对失败或取消", true);
+      showStatus("添加失败: " + e.message);
     }
   }
 
   async function executeTransfers() {
-    setStatus("等待用户确认执行批量转账...");
     try {
+      showStatus("执行批量转账中...");
       const tx = await contract.executeTransfers();
       await tx.wait();
-      setStatus("批量转账执行成功！");
+      showStatus("批量转账执行成功");
     } catch (e) {
-      console.error(e);
-      setStatus("执行失败或取消", true);
+      showStatus("执行失败: " + e.message);
     }
   }
 
   async function transferOwnership() {
-    const newOwner = newOwnerInput.value.trim();
+    const newOwner = document.getElementById("newOwner").value.trim();
     if (!ethers.utils.isAddress(newOwner)) {
       alert("请输入有效的新所有者地址");
       return;
     }
-    setStatus("等待用户确认转移所有权...");
     try {
+      showStatus("转移所有权中...");
       const tx = await contract.transferOwnership(newOwner);
       await tx.wait();
-      setStatus("所有权转移成功！");
-      newOwnerInput.value = "";
-      await refreshOwner();
+      showStatus("所有权转移成功");
+      document.getElementById("newOwner").value = "";
     } catch (e) {
-      console.error(e);
-      setStatus("转移所有权失败或取消", true);
+      showStatus("转移失败: " + e.message);
     }
   }
 
-  function setStatus(msg, isError = false) {
-    statusP.textContent = msg;
-    statusP.style.color = isError ? "red" : "green";
+  function showStatus(msg) {
+    statusDiv.textContent = msg;
   }
 
-  connectButton.onclick = connectWallet;
+  connectBtn.onclick = connectWallet;
   addPairBtn.onclick = addPair;
-  execTransfersBtn.onclick = executeTransfers;
+  executeBtn.onclick = executeTransfers;
   transferOwnerBtn.onclick = transferOwnership;
-</script>
 
+</script>
 </body>
 </html>
