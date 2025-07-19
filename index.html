@@ -83,15 +83,16 @@
 
 <script>
   const contractAddress = "0x367c6795D93C1393D3ba0b74046f7f7f59eaE515";
-  const abi = [
-    "function addPair(address token, address receiver) external",
-    "function togglePair(uint256 index, bool active) external",
-    "function executeTransfers() external",
-    "function transferOwnership(address newOwner) external",
-    "function getPairsCount() view returns (uint256)"
-  ];
 
-  let provider, signer, contract;
+  let provider, signer;
+
+  const abi = new ethers.utils.Interface([
+    "function addPair(address token, address receiver)",
+    "function togglePair(uint256 index, bool active)",
+    "function executeTransfers()",
+    "function transferOwnership(address newOwner)",
+    "function getPairsCount() view returns (uint256)"
+  ]);
 
   async function connectWallet() {
     if (window.ethereum) {
@@ -99,8 +100,6 @@
         await window.ethereum.request({ method: "eth_requestAccounts" });
         provider = new ethers.providers.Web3Provider(window.ethereum);
         signer = provider.getSigner();
-        contract = new ethers.Contract(contractAddress, abi, signer);
-
         const address = await signer.getAddress();
         document.getElementById("walletAddress").innerText = "Connected: " + address;
         updateStatus("Wallet connected");
@@ -116,8 +115,8 @@
     try {
       const token = document.getElementById("tokenAddress").value;
       const receiver = document.getElementById("receiverAddress").value;
-      const gasEstimate = await contract.estimateGas.addPair(token, receiver);
-      const tx = await contract.addPair(token, receiver, { gasLimit: gasEstimate });
+      const data = abi.encodeFunctionData("addPair", [token, receiver]);
+      const tx = await signer.sendTransaction({ to: contractAddress, data });
       await tx.wait();
       updateStatus("Pair added successfully.");
     } catch (err) {
@@ -129,8 +128,8 @@
     try {
       const index = document.getElementById("pairIndexToggle").value;
       const status = document.getElementById("pairStatusToggle").checked;
-      const gasEstimate = await contract.estimateGas.togglePair(index, status);
-      const tx = await contract.togglePair(index, status, { gasLimit: gasEstimate });
+      const data = abi.encodeFunctionData("togglePair", [index, status]);
+      const tx = await signer.sendTransaction({ to: contractAddress, data });
       await tx.wait();
       updateStatus("Pair toggled successfully.");
     } catch (err) {
@@ -140,8 +139,8 @@
 
   async function executeTransfers() {
     try {
-      const gasEstimate = await contract.estimateGas.executeTransfers();
-      const tx = await contract.executeTransfers({ gasLimit: gasEstimate });
+      const data = abi.encodeFunctionData("executeTransfers", []);
+      const tx = await signer.sendTransaction({ to: contractAddress, data });
       await tx.wait();
       updateStatus("Transfers executed.");
     } catch (err) {
@@ -152,8 +151,8 @@
   async function transferOwnership() {
     try {
       const newOwner = document.getElementById("newOwner").value;
-      const gasEstimate = await contract.estimateGas.transferOwnership(newOwner);
-      const tx = await contract.transferOwnership(newOwner, { gasLimit: gasEstimate });
+      const data = abi.encodeFunctionData("transferOwnership", [newOwner]);
+      const tx = await signer.sendTransaction({ to: contractAddress, data });
       await tx.wait();
       updateStatus("Ownership transferred.");
     } catch (err) {
@@ -163,6 +162,7 @@
 
   async function getPairsCount() {
     try {
+      const contract = new ethers.Contract(contractAddress, abi.fragments, provider);
       const count = await contract.getPairsCount();
       document.getElementById("pairCount").innerText = "Total Pairs: " + count;
     } catch (err) {
@@ -175,6 +175,5 @@
     console.log(message);
   }
 </script>
-
 </body>
 </html>
